@@ -1,0 +1,3 @@
+fonts-noto-cjk
+fonts-noto-mono
+python3-tk

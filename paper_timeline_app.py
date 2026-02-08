@@ -3,13 +3,44 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from datetime import datetime, timedelta
 import matplotlib.dates as mdates
+import matplotlib.font_manager as fm
 import io
 import json
 import os
+import urllib.request
 
-# 设置中文字体
-plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
-plt.rcParams['axes.unicode_minus'] = False
+# 设置中文字体 - 支持 Streamlit 社区版
+def setup_chinese_font():
+    """在 Streamlit 部署环境中配置中文字体"""
+    try:
+        # 尝试使用系统字体
+        system_fonts = fm.findSystemFonts()
+        chinese_fonts = []
+        
+        # 寻找中文字体
+        for font_path in system_fonts:
+            if 'SimHei' in font_path or 'simhei' in font_path.lower():
+                chinese_fonts.append(font_path)
+            elif 'WenQuanYi' in font_path or 'wenquanyi' in font_path.lower():
+                chinese_fonts.append(font_path)
+            elif 'Noto' in font_path and 'Sans CJK' in font_path:
+                chinese_fonts.append(font_path)
+        
+        if chinese_fonts:
+            # 使用找到的中文字体
+            font_path = chinese_fonts[0]
+            font_name = fm.FontProperties(fname=font_path).get_name()
+            plt.rcParams['font.sans-serif'] = [font_name, 'DejaVu Sans']
+        else:
+            # 如果没找到中文字体，使用 DejaVu Sans 的降级方案
+            plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Helvetica']
+    except Exception as e:
+        print(f"字体配置警告: {e}")
+        plt.rcParams['font.sans-serif'] = ['DejaVu Sans']
+    
+    plt.rcParams['axes.unicode_minus'] = False
+
+setup_chinese_font()
 
 st.set_page_config(page_title="论文审稿流程可视化", layout="wide")
 
