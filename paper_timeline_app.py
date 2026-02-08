@@ -6,38 +6,102 @@ import matplotlib.dates as mdates
 import matplotlib.font_manager as fm
 import io
 import json
+import shutil
 import os
 
-# 设置中文字体 - 支持 Streamlit 社区版
+# 设置中文字体 - 支持 Streamlit 社区版和本地环境
 def setup_chinese_font():
     """在 Streamlit 部署环境中配置中文字体"""
-    try:
-        # 尝试使用系统字体
-        system_fonts = fm.findSystemFonts()
-        chinese_fonts = []
-        
-        # 寻找中文字体
-        for font_path in system_fonts:
-            if 'SimHei' in font_path or 'simhei' in font_path.lower():
-                chinese_fonts.append(font_path)
-            elif 'WenQuanYi' in font_path or 'wenquanyi' in font_path.lower():
-                chinese_fonts.append(font_path)
-            elif 'Noto' in font_path and 'Sans CJK' in font_path:
-                chinese_fonts.append(font_path)
-        
-        if chinese_fonts:
-            # 使用找到的中文字体
-            font_path = chinese_fonts[0]
-            font_name = fm.FontProperties(fname=font_path).get_name()
+    # 常见中文字体路径（按优先级排列）
+    font_candidates = [
+        # Linux 系统常见路径
+        '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+        '/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc',
+        '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+        '/usr/share/fonts/truetype/droid/DroidSansFallback.ttf',
+        # macOS 路径
+        '/Library/Fonts/SimHei.ttf',
+        '/System/Library/Fonts/PingFang.ttc',
+        # Windows 路径
+        'C:\\Windows\\Fonts\\simhei.ttf',
+        'C:\\Windows\\Fonts\\msyh.ttf',
+    ]
+    
+    font_found = None
+    
+    # 方法1：直接查找已知路径
+    for font_path in font_candidates:
+        if os.path.exists(font_path):
+            try:
+                font_found = font_path
+                print(f"找到中文字体: {font_path}")
+                break
+            except Exception:
+                pass
+    
+    # 方法2：扫描系统字体目录
+    if not font_found:
+        font_dirs = [
+            '/usr/share/fonts',
+            '/usr/local/share/fonts',
+            '/System/Library/Fonts',
+            '~/.fonts'
+        ]
+        for font_dir in font_dirs:
+            font_dir = os.path.expanduser(font_dir)
+            if os.path.exists(font_dir):
+                try:
+                    for file in os.listdir(font_dir):
+                        if file.endswith(('.ttf', '.ttc')):
+                            if any(x in file.lower() for x in ['noto', 'simh', 'droid', 'ping', 'msyh', 'wenquanyi']):
+                                font_found = os.path.join(font_dir, file)
+                                print(f"找到中文字体: {font_found}")
+                                break
+                    if font_found:
+                        break
+                except Exception:
+                    pass
+    
+    # 方法3：使用 fontmanager 发现
+    if not font_found:
+        try:
+            system_fonts = fm.findSystemFonts()
+            for font_path in system_fonts:
+                if any(x in font_path.lower() for x in ['noto', 'simh', 'droid', 'ping', 'wenquanyi']):
+                    font_found = font_path
+                    print(f"找到中文字体: {font_found}")
+                    break
+        except Exception:
+            pass
+    
+    # 配置 matplotlib
+    if font_found:
+        try:
+            # 重建字体缓存（重要！）
+            fm.fontManager.addfont(font_found)
+            font_prop = fm.FontProperties(fname=font_found)
+            font_name = font_prop.get_name()
             plt.rcParams['font.sans-serif'] = [font_name, 'DejaVu Sans']
-        else:
-            # 如果没找到中文字体，使用 DejaVu Sans 的降级方案
-            plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Helvetica']
-    except Exception as e:
-        print(f"字体配置警告: {e}")
+            print(f"已激活字体: {font_name}")
+        except Exception as e:
+            print(f"字体配置失败: {e}")
+            plt.rcParams['font.sans-serif'] = ['DejaVu Sans']
+    else:
+        print("⚠️ 未找到中文字体，使用英文字体降级")
         plt.rcParams['font.sans-serif'] = ['DejaVu Sans']
     
     plt.rcParams['axes.unicode_minus'] = False
+    
+    # 清除 matplotlib 字体缓存（确保新设置生效）
+    try:
+        import matplotlib
+        cache_dir = os.path.expanduser('~/.cache/matplotlib')
+        if os.path.exists(cache_dir):
+            import shutil
+            shutil.rmtree(cache_dir)
+            print("已清除 matplotlib 字体缓存")
+    except Exception:
+        pass
 
 setup_chinese_font()
 
@@ -260,6 +324,9 @@ if st.button("🎨 生成甘特图", type="primary", use_container_width=True):
     save_config(papers_data)
     st.success(f"✅ 配置已保存到 {CONFIG_FILE}")
     
+    # 重新确保字体配置（每次生成时重新配置）
+    plt.rcParams['font.sans-serif'] = plt.rcParams.get('font.sans-serif', ['DejaVu Sans'])
+    
     # 计算时间范围
     all_dates = []
     for paper in papers_data:
@@ -275,6 +342,12 @@ if st.button("🎨 生成甘特图", type="primary", use_container_width=True):
     ax.set_xlim(start_date, end_date)
     ax.set_ylim(0, num_papers * 3 + 1)
     
+    # 获取当前配置中的字体（已在开始时设置）
+    font_list = plt.rcParams.get('font.sans-serif', ['DejaVu Sans'])
+    title_font = fm.FontProperties(family=font_list[0], size=18, weight='bold')
+    label_font = fm.FontProperties(family=font_list[0], size=10, weight='bold')
+    text_font = fm.FontProperties(family=font_list[0], size=9, weight='bold')
+    
     # 绘制函数 - 去掉黑色外框
     def draw_task(ax, start, duration, color, label, y_pos, show_label):
         ax.broken_barh([(start, duration)], (y_pos, 0.7), 
@@ -282,7 +355,7 @@ if st.button("🎨 生成甘特图", type="primary", use_container_width=True):
         if show_label:
             center = start + duration/2
             ax.text(center, y_pos + 0.35, label, ha='center', va='center', 
-                   fontsize=8, fontweight='bold', color='#1C2833',
+                   fontsize=8, fontweight='bold', color='#1C2833', fontproperties=label_font,
                    bbox=dict(boxstyle='round,pad=0.3', facecolor='white', 
                             alpha=0.9, edgecolor='gray', linewidth=1))
     
@@ -342,7 +415,7 @@ if st.button("🎨 生成甘特图", type="primary", use_container_width=True):
                     xytext=(paper['submit_date'], y_pos - 0.3),
                     arrowprops=dict(arrowstyle='<->', color='#34495E', lw=2))
         ax.text(mid_date, y_pos - 0.6, f'总周期: {total_days}天', 
-               ha='center', fontsize=9, fontweight='bold', color='white',
+               ha='center', fontsize=9, fontweight='bold', color='white', fontproperties=text_font,
                bbox=dict(boxstyle='round,pad=0.4', facecolor='#34495E', edgecolor='#2C3E50', linewidth=1.5))
         
         # 背景色
@@ -351,7 +424,10 @@ if st.button("🎨 生成甘特图", type="primary", use_container_width=True):
     
     # Y轴设置
     ax.set_yticks(y_positions)
-    ax.set_yticklabels(y_labels, fontsize=10, fontweight='bold')
+    y_ticklabels = ax.set_yticklabels(y_labels, fontsize=10, fontweight='bold')
+    # 为 Y 轴标签应用字体
+    for label in ax.get_yticklabels():
+        label.set_fontproperties(label_font)
     ax.tick_params(axis='y', length=0, pad=15)
     
     # X轴设置
@@ -359,13 +435,16 @@ if st.button("🎨 生成甘特图", type="primary", use_container_width=True):
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y年%m月'))
     ax.xaxis.set_minor_locator(mdates.WeekdayLocator(interval=2))
     plt.xticks(rotation=0, fontsize=10)
+    # 为 X 轴标签应用字体（标题中包含中文）
+    for label in ax.get_xticklabels():
+        label.set_fontproperties(label_font)
     
     # 今日参考线
     today = datetime.now()
     if start_date <= today <= end_date:
         ax.axvline(x=today, color='#E74C3C', linestyle='--', linewidth=3, alpha=0.7)
         ax.text(today, num_papers * 3 + 0.5, '今日', rotation=0, ha='center', va='bottom', 
-               fontsize=10, fontweight='bold', color='#C0392B',
+               fontsize=10, fontweight='bold', color='#C0392B', fontproperties=text_font,
                bbox=dict(boxstyle='round,pad=0.4', facecolor='#FADBD8', edgecolor='#E74C3C', linewidth=1.5))
     
     # 网格
@@ -398,9 +477,13 @@ if st.button("🎨 生成甘特图", type="primary", use_container_width=True):
                        bbox_to_anchor=(0.5, -0.05), ncol=ncol, fontsize=10, 
                        frameon=False, columnspacing=2.5, handlelength=3, handleheight=1.5)
     
+    # 设置图例文本的字体
+    for text in legend.get_texts():
+        text.set_fontproperties(label_font)
+    
     # 标题
     ax.set_title('学术论文审稿流程甘特图', 
-                 fontsize=18, fontweight='bold', pad=20, color='#2C3E50')
+                 fontsize=18, fontweight='bold', pad=20, color='#2C3E50', fontproperties=title_font)
     
     # 边框
     for spine in ['top', 'right', 'left']:
