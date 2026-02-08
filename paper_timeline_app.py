@@ -7,7 +7,6 @@ import matplotlib.font_manager as fm
 import io
 import json
 import os
-import urllib.request
 
 # 设置中文字体 - 支持 Streamlit 社区版
 def setup_chinese_font():
@@ -56,7 +55,7 @@ def load_config():
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
+        except (IOError, json.JSONDecodeError):
             return None
     return None
 
